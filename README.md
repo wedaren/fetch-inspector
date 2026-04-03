@@ -52,3 +52,26 @@ node dist/index.js --redact=*
 ```
 
 默认行为（不指定）会把所有 header 原样打印。
+
+JSON 输出（机器可读）
+---------------------
+
+新增 `--json` 选项以输出机器可读的 JSON 结构，包含 `parsed`、`status`、`responseHeaders`、`responseBody`、`duration` 与 `report` 字段。例如：
+
+```bash
+node dist/cli.js inspect --json
+```
+
+如果同时指定了 `--redact`，JSON 输出中的 header 字段也会被相同规则脱敏。
+
+示例 agent
+----------
+
+仓库包含一个简单示例 agent：`src/examples/agent.ts`。构建后可直接运行：
+
+```bash
+npm run build
+node dist/examples/agent.js
+```
+
+示例 agent 使用 `runFromSnippet` 程序化 API 调用解析与执行流程，并以 JSON 打印结果，便于集成到自动化 agent 中。

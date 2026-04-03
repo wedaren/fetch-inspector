@@ -1,7 +1,4 @@
-import { parseFetchSnippet } from './parser';
-import clipboardy from 'clipboardy';
-import { fetch } from 'undici';
-import { formatReadableReport } from './report';
+import { runFromClipboard } from './run';
 
 function parseRedactArg(): string[] {
   const argv = process.argv.slice(2);
@@ -18,54 +15,33 @@ function parseRedactArg(): string[] {
   return list;
 }
 
-async function main() {
+(async function main(){
   const redactList = parseRedactArg();
-  const clip = await clipboardy.read();
-  if (!clip || clip.trim().length === 0) {
-    console.error('Clipboard is empty');
-    process.exit(1);
-  }
+  const jsonOut = process.argv.slice(2).some((a) => a === '--json');
+  try{
+    const result = await runFromClipboard(redactList);
+    if (jsonOut) {
+      const redactAll = redactList.includes('*');
+      const redactHeader = (k: string) => redactAll || redactList.includes(k.toLowerCase());
+      const parsedHeaders = { ...(result.parsed.headers || {}) } as Record<string, any>;
+      const responseHeaders = { ...(result.responseHeaders || {}) } as Record<string, any>;
+      for (const k of Object.keys(parsedHeaders)) if (redactHeader(k)) parsedHeaders[k] = '<REDACTED>';
+      for (const k of Object.keys(responseHeaders)) if (redactHeader(k)) responseHeaders[k] = '<REDACTED>';
 
-  let parsed;
-  try {
-    parsed = parseFetchSnippet(clip);
-  } catch (err: any) {
-    console.error('Failed to parse fetch snippet:', err.message || err);
-    process.exit(1);
-  }
-
-  const options: any = { method: parsed.method.toUpperCase(), headers: parsed.headers || {} };
-  if (parsed.body !== undefined) {
-    if (typeof parsed.body === 'object') {
-      // 如果是对象，优先按 JSON stringify
-      options.body = JSON.stringify(parsed.body);
+      const out = {
+        parsed: { ...result.parsed, headers: parsedHeaders },
+        status: result.status,
+        responseHeaders,
+        responseBody: result.responseBody,
+        duration: result.duration,
+        report: result.report,
+      };
+      console.log(JSON.stringify(out, null, 2));
     } else {
-      options.body = String(parsed.body);
+      console.log(result.report);
     }
-  }
-
-  const start = Date.now();
-  let res;
-  try {
-    res = await fetch(parsed.url, options);
-  } catch (err: any) {
-    console.error('Request failed:', err.message || err);
+  }catch(e:any){
+    console.error('ERROR', e && e.message ? e.message : e);
     process.exit(1);
   }
-  const duration = Date.now() - start;
-
-  const respHeaders: Record<string, string> = {};
-  // undici 的 headers 遵循 WHATWG Headers
-  res.headers.forEach((v: string, k: string) => {
-    respHeaders[k] = v;
-  });
-
-  const respText = await res.text();
-  const report = formatReadableReport(parsed as any, res.status, respHeaders, respText, duration, redactList);
-  console.log(report);
-}
-
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+})();
